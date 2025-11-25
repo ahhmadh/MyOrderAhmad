@@ -12,7 +12,7 @@ import SwiftUI
 struct MyOrderAhmadApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RoutePlannerView()   // ← Launches directly into the mapping screen
         }
     }
 }
