@@ -6,11 +6,11 @@
 //  Created by Ahmad Hassan on 2025-11-24.
 //
 
+
 import Foundation
 import Combine
 import CoreLocation
 
-/// Handles user location permissions + coordinate updates.
 class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     private let manager = CLLocationManager()
@@ -24,24 +24,32 @@ class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyBest
     }
 
-    /// Request When-In-Use authorization
+    // MARK: - Request Permission
     func requestPermission() {
         manager.requestWhenInUseAuthorization()
-        manager.startUpdatingLocation()
+        // DO NOT start updating here.
     }
 
-    // MARK: - Delegate Callbacks
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        userLocation = locations.first?.coordinate
-    }
-
+    // MARK: - Authorization Change
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         switch manager.authorizationStatus {
+
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.startUpdatingLocation()
+
         case .denied, .restricted:
             permissionDenied = true
-        default:
+
+        case .notDetermined:
+            break
+
+        @unknown default:
             break
         }
+    }
+
+    // MARK: - Location Update
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        userLocation = locations.last?.coordinate
     }
 }

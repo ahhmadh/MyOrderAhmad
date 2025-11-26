@@ -13,17 +13,8 @@ import Combine
 @MainActor
 class MapViewModel: ObservableObject {
 
-    // MARK: - Services
-    private let locationService = LocationService()
     private let searchService = SearchService()
     private let directionsService = DirectionsService()
-
-    private var cancellables: Set<AnyCancellable> = []
-
-    // MARK: - Published Properties
-
-    /// Exposed for the View (RoutePlannerView) to display the user pin.
-    @Published var userLocation: CLLocationCoordinate2D?
 
     @Published var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 43.6532, longitude: -79.3832),
@@ -39,44 +30,6 @@ class MapViewModel: ObservableObject {
     @Published var routeLegs: [RouteLeg] = []
 
     @Published var state: AppState = .idle
-
-
-    // MARK: - Init
-
-    init() {
-        bindLocationUpdates()
-    }
-
-
-    // MARK: - Bindings
-
-    private func bindLocationUpdates() {
-
-        // Listen to location changes from LocationService
-        locationService.$userLocation
-            .receive(on: RunLoop.main)
-            .sink { [weak self] coordinate in
-                guard let coord = coordinate else { return }
-                guard let self = self else { return }
-
-                // Update View-exposed property
-                self.userLocation = coord
-
-                // Update map region
-                self.region = MKCoordinateRegion(
-                    center: coord,
-                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                )
-            }
-            .store(in: &cancellables)
-    }
-
-
-    // MARK: - Request Location
-
-    func requestLocation() {
-        locationService.requestPermission()
-    }
 
 
     // MARK: - Searching
@@ -104,43 +57,28 @@ class MapViewModel: ObservableObject {
     }
 
 
-    // MARK: - Assign Stops
+    // MARK: - Assigning Stops
 
-    func assignStop1(_ item: SearchLocation) {
-        stop1 = item.mapItem
-    }
-
-    func assignStop2(_ item: SearchLocation) {
-        stop2 = item.mapItem
-    }
-
-    func assignDestination(_ item: SearchLocation) {
-        destination = item.mapItem
-    }
+    func assignStop1(_ item: SearchLocation) { stop1 = item.mapItem }
+    func assignStop2(_ item: SearchLocation) { stop2 = item.mapItem }
+    func assignDestination(_ item: SearchLocation) { destination = item.mapItem }
 
 
-    // MARK: - Routing
+    // MARK: - COMPUTE ROUTE (NO GPS REQUIRED)
 
     func computeRoute(option: Int) async {
-        guard let startCoord = userLocation else {
-            state = .error("User location not available yet.")
-            return
-        }
-
         state = .loading
         routeLegs = []
-
-        let startMapItem = MKMapItem(placemark: MKPlacemark(coordinate: startCoord))
 
         switch option {
 
         case 0:
-            // Multi-leg: Start → Stop1 → Stop2 → Destination
-            await computeMultiLeg(start: startMapItem)
+            // Stop1 → Stop2 → Destination
+            await computeMultiLeg()
 
         case 1:
-            // Start → Stop1
-            await computeSingleLeg(from: startMapItem, to: stop1)
+            // Stop1 → Destination
+            await computeSingleLeg(from: stop1, to: destination)
 
         case 2:
             // Stop1 → Stop2
@@ -155,42 +93,37 @@ class MapViewModel: ObservableObject {
 
 
     // MARK: - Single Leg Route
-
     private func computeSingleLeg(from: MKMapItem?, to: MKMapItem?) async {
         guard let from = from, let to = to else {
-            state = .error("Missing stop(s) for route.")
+            state = .error("Missing stops. Select Stop 1 and the next stop.")
             return
         }
 
         do {
             let route = try await directionsService.calculateRoute(from: from, to: to)
 
-            let stepInstructions = route.steps
+            let steps = route.steps
                 .map { $0.instructions }
                 .filter { !$0.isEmpty }
 
-            let leg = RouteLeg(polyline: route.polyline, steps: stepInstructions)
+            let leg = RouteLeg(polyline: route.polyline, steps: steps)
             routeLegs.append(leg)
         }
         catch {
-            state = .error("Failed to compute route between stops.")
+            state = .error("Failed to compute route.")
         }
     }
 
 
-    // MARK: - Multi Leg Route
-
-    private func computeMultiLeg(start: MKMapItem) async {
-
+    // MARK: - Multi Leg Route (Stop1 → Stop2 → Destination)
+    private func computeMultiLeg() async {
         guard let s1 = stop1,
               let s2 = stop2,
-              let dest = destination
-        else {
-            state = .error("Please select First Stop, Second Stop, and Final Destination.")
+              let dest = destination else {
+            state = .error("Select Stop 1, Stop 2, and Destination.")
             return
         }
 
-        await computeSingleLeg(from: start, to: s1)
         await computeSingleLeg(from: s1, to: s2)
         await computeSingleLeg(from: s2, to: dest)
     }
